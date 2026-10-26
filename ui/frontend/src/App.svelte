@@ -15,7 +15,57 @@
   import type { ColDef } from "ag-grid-community";
   import "ag-grid-community/styles/ag-grid.css";
   import "ag-grid-community/styles/ag-theme-alpine.css";
+  import { onMount, tick } from "svelte";
 
+  // ==========================================
+  // 水墨主题切换逻辑
+  // ==========================================
+  let isDark = $state(false);
+  let isAnimating = $state(false);
+  let animX = $state(0);
+  let animY = $state(0);
+  let animColor = $state("");
+
+  $effect(() => {
+    if (isDark) {
+      document.documentElement.classList.add("dark");
+      localStorage.setItem("theme", "dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+      localStorage.setItem("theme", "light");
+    }
+  });
+
+  // ⚠️ 注意：这里是你原本就有的 onMount，请把主题初始化的代码合并进去，不要覆盖你原来监听 EventsOn 的代码！
+  onMount(() => {
+    // 加上这部分主题初始化
+    const saved = localStorage.getItem("theme");
+    if (saved === "dark" || (!saved && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
+      isDark = true;
+    }
+    // ... 下面保留你原本的 EventsOn("app_state_update", ...) 等逻辑 ...
+  });
+
+  // 核心动画函数
+  async function handleThemeToggle(event: MouseEvent) {
+    if (isAnimating) return;
+    animX = event.clientX;
+    animY = event.clientY;
+    const nextDark = !isDark;
+    animColor = nextDark ? "#0f172a" : "#f9fafb"; // 分别对应 dark:bg-slate-900 和 bg-gray-50
+
+    isAnimating = true;
+    await tick(); 
+
+    const overlay = document.getElementById("theme-overlay");
+    if (overlay) {
+      void overlay.offsetWidth; 
+      overlay.style.clipPath = `circle(150vmax at ${animX}px ${animY}px)`;
+    }
+
+    setTimeout(() => { isDark = nextDark; }, 350);
+    setTimeout(() => { isAnimating = false; }, 800);
+  }
   // ---------------------------------------------------------------------------
   // Types
   // ---------------------------------------------------------------------------
