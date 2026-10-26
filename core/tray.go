@@ -18,17 +18,17 @@ func RunSystray(iconData []byte, autoStart *AutoStartManager, onOpenUI func(), o
 			systray.SetIcon(iconData)
 		}
 		systray.SetTitle("Resurrector")
-		systray.SetTooltip("Resurrector Process Monitor")
+		systray.SetTooltip("Resurrector 进程守护工具")
 
 		mVersion := systray.AddMenuItem(fmt.Sprintf("Resurrector v%s", Version), "")
 		mVersion.Disable()
 		systray.AddSeparator()
 
-		mOpen := systray.AddMenuItem("Open Settings", "Open UI")
-		mOpenConfigWith := systray.AddMenuItem("Open config with...", "Choose an app to open config.toml")
+		mOpen := systray.AddMenuItem("打开设置", "Open UI")
+		mOpenConfigWith := systray.AddMenuItem("打开配置文件...", "Choose an app to open config.toml")
 		var mAutoStart *systray.MenuItem
 		if autoStart != nil {
-			mAutoStart = systray.AddMenuItem("Auto-start Resurrector", "Start Resurrector automatically when you sign in to Windows")
+			mAutoStart = systray.AddMenuItem("开机自启动", "Start Resurrector automatically when you sign in to Windows")
 			enabled, err := autoStart.Enabled()
 			if err != nil {
 				slog.Warn("failed to read logon startup setting",
@@ -40,7 +40,7 @@ func RunSystray(iconData []byte, autoStart *AutoStartManager, onOpenUI func(), o
 			}
 			systray.AddSeparator()
 		}
-		mQuit := systray.AddMenuItem("Quit", "Quit Resurrector")
+		mQuit := systray.AddMenuItem("退出", "Quit Resurrector")
 
 		mOpen.Click(func() {
 			onOpenUI()
