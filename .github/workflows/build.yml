@@ -1,0 +1,83 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.23'
+        cache: false 
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        run_install: false
+
+    # 安装 Wails v2 命令行工具 (原项目是 v2 架构)
+    - name: Install Wails v2 CLI
+      run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+    # 核心修复：自动生成占位图标，防止编译核心时报错找不到 icon.ico
+    - name: Generate Placeholder Icon
+      shell: pwsh
+      run: |
+        $base64 = "AAABAAEAAQEAAAEAIAAwAAAAFgAAACgAAAABAAAAAgAAAAEAIAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAD///8AAAAAAA=="
+        $bytes = [Convert]::FromBase64String($base64)
+        [IO.File]::WriteAllBytes("core/icon.ico", $bytes)
+        Write-Host "✅ Icon.ico 已成功生成"
+
+    # 同步多模块依赖 (解决 go.work 路径问题)
+    - name: Sync Go Workspace
+      run: go work sync
+
+    # 编译核心程序 (无黑框)
+    - name: Build Core App
+      run: go build -ldflags="-H windowsgui" -o core/resurrector.exe ./core
+
+    # 编译汉化界面 (无黑框)
+    - name: Build UI App
+      working-directory: ./ui
+      run: wails build -clean -ldflags="-H windowsgui"
+
+    # 整理文件并智能重命名
+    - name: Prepare Release Folder
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Force -Path Release
+        
+        # 复制核心文件
+        Copy-Item -Path "core\resurrector.exe" -Destination "Release\"
+        
+        # 寻找并重命名 Wails 编译的 UI 文件
+        $uiExe = Get-ChildItem -Path "ui\build\bin\*.exe" | Select-Object -First 1
+        if ($uiExe) {
+            Copy-Item -Path $uiExe.FullName -Destination "Release\resurrector-ui.exe"
+            Write-Host "✅ UI 程序已就绪"
+        } else {
+            Write-Error "❌ 找不到 Wails 编译的 UI 程序！"
+            exit 1
+        }
+
+    # 上传打包好的最终产物
+    - name: Upload Final Package
+      uses: actions/upload-artifact@v4
+      with:
+        name: Resurrector-ZH-Final
+        path: Release/
+        if-no-files-found: error
