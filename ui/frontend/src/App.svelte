@@ -570,7 +570,21 @@
 </script>
 
 <svelte:window onkeydown={handleWindowKeydown} />
-
+<!-- 水墨扩散动画遮罩层 -->
+{#if isAnimating}
+  <div 
+    id="theme-overlay"
+    class="fixed inset-0 z-[9999] pointer-events-none"
+    style="
+      background-color: {animColor};
+      clip-path: circle(0px at {animX}px {animY}px);
+      transition: clip-path 0.75s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+      filter: blur(15px);
+      transform: scale(1.1);
+      will-change: clip-path, filter, transform;
+    "
+  ></div>
+{/if}
 <!-- =========================================================================
      Main Layout
      ========================================================================= -->
@@ -592,11 +606,24 @@
         overlayNoRowsTemplate="<span class='text-gray-500 font-medium'>等待进程连接...</span>"
       />
     </div>
-    <div class="toolbar">
-      <button class="btn btn-primary" type="button" onclick={openCreateDialog}
-        >添加</button
-      >
-    </div>
+      <div class="toolbar flex justify-end items-center gap-3">
+        <button 
+          class="btn btn-ghost flex items-center gap-2" 
+          type="button" 
+          onclick={handleThemeToggle} 
+          disabled={isAnimating}
+        >
+          {#if isDark}
+            <span class="text-amber-400">☀️</span> 亮色
+          {:else}
+            <span class="text-indigo-400">🌙</span> 暗色
+          {/if}
+        </button>
+        
+        <button class="btn btn-primary" type="button" onclick={openCreateDialog}>
+          添加
+        </button>
+      </div>
     <div class="drop-hint">
       将可执行文件拖放到窗口中以注册新的应用条目。
     </div>
