@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from "svelte";
+ import { onDestroy, onMount, tick } from "svelte";
   import {
     EventsOn,
     OnFileDrop,
@@ -15,8 +15,7 @@
   import type { ColDef } from "ag-grid-community";
   import "ag-grid-community/styles/ag-grid.css";
   import "ag-grid-community/styles/ag-theme-alpine.css";
-  import { onMount, tick } from "svelte";
-
+  
   // ==========================================
   // 水墨主题切换逻辑
   // ==========================================
