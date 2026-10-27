@@ -1,5 +1,5 @@
 <script lang="ts">
- import { onDestroy, onMount, tick } from "svelte";
+  import { onDestroy, onMount, tick } from "svelte";
   import {
     EventsOn,
     OnFileDrop,
@@ -13,18 +13,27 @@
   import type { main } from "../wailsjs/go/models";
   import AgGridSvelte from "./AgGrid.svelte";
   import type { ColDef } from "ag-grid-community";
+  
+  // 引入 AG Grid 的亮色和暗色 CSS
   import "ag-grid-community/styles/ag-grid.css";
   import "ag-grid-community/styles/ag-theme-alpine.css";
+  import "ag-grid-community/styles/ag-theme-alpine-dark.css"; 
+
+  // ==========================================
+  // 主题记忆与切换逻辑
+  // ==========================================
+  // 极速初始化：直接从 localStorage 读取，保证页面渲染第一毫秒就是正确的颜色
+  let isDark = $state(
+    localStorage.getItem("theme") === "dark" ||
+      (!localStorage.getItem("theme") && window.matchMedia("(prefers-color-scheme: dark)").matches)
+  );
   
-  // ==========================================
-  // 水墨主题切换逻辑
-  // ==========================================
-  let isDark = $state(false);
   let isAnimating = $state(false);
   let animX = $state(0);
   let animY = $state(0);
   let animColor = $state("");
 
+  // 状态改变时，自动同步给 HTML 标签和 localStorage
   $effect(() => {
     if (isDark) {
       document.documentElement.classList.add("dark");
@@ -35,38 +44,36 @@
     }
   });
 
-  // ⚠️ 注意：这里是你原本就有的 onMount，请把主题初始化的代码合并进去，不要覆盖你原来监听 EventsOn 的代码！
-  onMount(() => {
-    // 加上这部分主题初始化
-    const saved = localStorage.getItem("theme");
-    if (saved === "dark" || (!saved && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
-      isDark = true;
-    }
-    // ... 下面保留你原本的 EventsOn("app_state_update", ...) 等逻辑 ...
-  });
-
-  // 核心动画函数
+  // 水墨动画切换函数
   async function handleThemeToggle(event: MouseEvent) {
     if (isAnimating) return;
     animX = event.clientX;
     animY = event.clientY;
     const nextDark = !isDark;
-    animColor = nextDark ? "#0f172a" : "#f9fafb"; // 分别对应 dark:bg-slate-900 和 bg-gray-50
+    // 深色背景 #0f172a (slate-900)，浅色背景 #f9fafb (gray-50)
+    animColor = nextDark ? "#0f172a" : "#f9fafb";
 
     isAnimating = true;
-    await tick(); 
+    await tick(); // 等待遮罩层 DOM 渲染完毕
 
     const overlay = document.getElementById("theme-overlay");
     if (overlay) {
-      void overlay.offsetWidth; 
+      void overlay.offsetWidth; // 强制浏览器重绘
       overlay.style.clipPath = `circle(150vmax at ${animX}px ${animY}px)`;
     }
 
-    setTimeout(() => { isDark = nextDark; }, 350);
-    setTimeout(() => { isAnimating = false; }, 800);
+    // 动画进行到 350ms 时，切换真实的主题
+    setTimeout(() => {
+      isDark = nextDark;
+    }, 350);
+    // 动画 800ms 结束后，清理遮罩层
+    setTimeout(() => {
+      isAnimating = false;
+    }, 800);
   }
+
   // ---------------------------------------------------------------------------
-  // Types
+  // Types & State
   // ---------------------------------------------------------------------------
   type AppStateInfo = {
     name: string;
@@ -78,12 +85,10 @@
     restartCount: number;
   };
 
-  // ---------------------------------------------------------------------------
-  // State: process monitor table
-  // ---------------------------------------------------------------------------
   let apps: Record<string, AppStateInfo> = $state({});
 
   onMount(() => {
+    // 原本的监听事件保持不变
     EventsOn("app_state_update", (dataStr: string) => {
       try {
         const data: AppStateInfo = JSON.parse(dataStr);
@@ -184,8 +189,6 @@
     },
   ];
 
-  // Case-insensitive comparator for string values; falls back to default
-  // comparison for non-strings (numbers, booleans, null/undefined).
   function caseInsensitiveComparator(a: unknown, b: unknown): number {
     if (typeof a === "string" && typeof b === "string") {
       return a.localeCompare(b, undefined, { sensitivity: "base" });
@@ -276,7 +279,6 @@
   }
 
   function handleRowDoubleClick(event: any) {
-    // Ag-grid event data is typically in event.data
     const name: string =
       event?.data?.name ||
       event?.detail?.data?.name ||
@@ -289,9 +291,6 @@
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Context Menu State & Handlers
-  // ---------------------------------------------------------------------------
   type ContextMenuState = {
     visible: boolean;
     x: number;
@@ -317,7 +316,6 @@
     const mouseEvent = event.event as MouseEvent;
     if (!mouseEvent) return;
 
-    // Window boundaries adjustment
     const menuWidth = 160;
     const menuHeight = 150;
     let x = mouseEvent.clientX;
@@ -369,16 +367,13 @@
       const cfg = configs[appName];
       if (!cfg) return;
 
-      // Step 1: Disable
       await UpdateAppConfig(appName, {
         ...cfg,
         enabled: false,
       });
 
-      // Step 2: Wait for core reconciler debounce (500ms in core, wait 800ms)
       await new Promise((resolve) => setTimeout(resolve, 800));
 
-      // Step 3: Enable
       await UpdateAppConfig(appName, {
         ...cfg,
         enabled: true,
@@ -445,18 +440,13 @@
   }
 
   function handleDroppedCommand(paths: string[]) {
-    if (!paths || paths.length === 0) {
-      return;
-    }
+    if (!paths || paths.length === 0) return;
 
     const droppedPath = (paths[0] || "").trim();
-    if (!droppedPath) {
-      return;
-    }
+    if (!droppedPath) return;
 
     if (!isSupportedCommandFile(droppedPath)) {
-      errorMessage =
-        "拖入的文件不是支持的命令类型。请拖入可执行文件或脚本文件。";
+      errorMessage = "拖入的文件不是支持的命令类型。请拖入可执行文件或脚本文件。";
       return;
     }
 
@@ -569,7 +559,10 @@
 </script>
 
 <svelte:window onkeydown={handleWindowKeydown} />
-<!-- 水墨扩散动画遮罩层 -->
+
+<!-- =========================================
+     水墨扩散动画遮罩层
+     ========================================= -->
 {#if isAnimating}
   <div 
     id="theme-overlay"
@@ -584,16 +577,18 @@
     "
   ></div>
 {/if}
-<!-- =========================================================================
+
+<!-- =========================================
      Main Layout
-     ========================================================================= -->
+     ========================================= -->
 <main
   class="p-6 h-screen w-full flex flex-col items-center box-border bg-gray-50 dark:bg-slate-900"
 >
   <div
     class="w-full flex-1 shadow-2xl sm:rounded-lg flex flex-col overflow-hidden bg-white dark:bg-gray-800"
   >
-    <div class="ag-theme-alpine w-full h-full grow">
+    <!-- 👇 核心修复：根据 isDark 状态动态绑定 AG Grid 主题 -->
+    <div class="w-full h-full grow {isDark ? 'ag-theme-alpine-dark' : 'ag-theme-alpine'}">
       <AgGridSvelte
         rowData={appList}
         {columnDefs}
@@ -605,35 +600,36 @@
         overlayNoRowsTemplate="<span class='text-gray-500 font-medium'>等待进程连接...</span>"
       />
     </div>
-      <div class="toolbar flex justify-end items-center gap-3">
-        <button 
-          class="btn btn-ghost flex items-center gap-2" 
-          type="button" 
-          onclick={handleThemeToggle} 
-          disabled={isAnimating}
-        >
-          {#if isDark}
-            <span class="text-amber-400">☀️</span> 亮色
-          {:else}
-            <span class="text-indigo-400">🌙</span> 暗色
-          {/if}
-        </button>
-        
-        <button class="btn btn-primary" type="button" onclick={openCreateDialog}>
-          添加
-        </button>
-      </div>
+    
+    <div class="toolbar flex justify-end items-center gap-3">
+      <button 
+        class="btn btn-ghost flex items-center gap-2" 
+        type="button" 
+        onclick={handleThemeToggle} 
+        disabled={isAnimating}
+      >
+        {#if isDark}
+          <span class="text-amber-400">☀️</span> 亮色
+        {:else}
+          <span class="text-indigo-400">🌙</span> 暗色
+        {/if}
+      </button>
+      
+      <button class="btn btn-primary" type="button" onclick={openCreateDialog}>
+        添加
+      </button>
+    </div>
+    
     <div class="drop-hint">
       将可执行文件拖放到窗口中以注册新的应用条目。
     </div>
   </div>
 </main>
 
-<!-- =========================================================================
+<!-- =========================================
      Context Menu
-     ========================================================================= -->
+     ========================================= -->
 {#if contextMenu.visible}
-  <!-- Backdrop to close context menu on click outside -->
   <div
     class="fixed inset-0 z-40"
     onclick={closeContextMenu}
@@ -644,7 +640,6 @@
     role="presentation"
   ></div>
 
-  <!-- Menu Panel -->
   <div
     class="fixed z-50 min-w-[150px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl py-1 text-sm text-gray-700 dark:text-gray-200 select-none"
     style="top: {contextMenu.y}px; left: {contextMenu.x}px;"
@@ -663,12 +658,7 @@
         role="menuitem"
       >
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"
-          />
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
         禁用
       </button>
@@ -680,16 +670,9 @@
       >
         <svg
           class="w-4 h-4 {isRestarting[contextMenu.name] ? 'animate-spin' : ''}"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
+          fill="none" stroke="currentColor" viewBox="0 0 24 24"
         >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-          />
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
         </svg>
         {isRestarting[contextMenu.name] ? "正在重启…" : "重启"}
       </button>
@@ -700,18 +683,8 @@
         role="menuitem"
       >
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
-          />
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-          />
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
         启用
       </button>
@@ -723,26 +696,19 @@
       role="menuitem"
     >
       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="2"
-          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-        />
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
       </svg>
       编辑
     </button>
   </div>
 {/if}
 
-<!-- =========================================================================
+<!-- =========================================
      Edit Dialog
-     ========================================================================= -->
+     ========================================= -->
 {#if dialogOpen}
-  <!-- Backdrop -->
   <div class="dialog-backdrop" onclick={closeDialog} role="presentation"></div>
 
-  <!-- Modal -->
   <div
     class="dialog-panel"
     role="dialog"
@@ -756,34 +722,22 @@
     </div>
 
     {#if confirmDelete}
-      <!-- ── Delete Confirmation ───────────────────────────────────────── -->
       <div class="confirm-delete-area">
         <div class="confirm-icon">⚠️</div>
         <p class="confirm-text">
-          您确定要删除 <strong
-            >"{editingOriginalName}"</strong
-          > 吗？<br />
+          您确定要删除 <strong>"{editingOriginalName}"</strong> 吗？<br />
           此操作无法撤销。
         </p>
         <div class="confirm-buttons">
-          <button
-            class="btn btn-ghost"
-            onclick={handleDeleteCancel}
-            disabled={isSaving}
-          >
+          <button class="btn btn-ghost" onclick={handleDeleteCancel} disabled={isSaving}>
             取消
           </button>
-          <button
-            class="btn btn-danger"
-            onclick={handleDeleteConfirm}
-            disabled={isSaving}
-          >
+          <button class="btn btn-danger" onclick={handleDeleteConfirm} disabled={isSaving}>
             {isSaving ? "正在删除…" : "是的，删除"}
           </button>
         </div>
       </div>
     {:else}
-      <!-- ── Form ──────────────────────────────────────────────────────── -->
       <form
         class="dialog-form"
         onsubmit={(e) => {
@@ -791,145 +745,69 @@
           handleSave();
         }}
       >
-        <!-- App Name -->
         <div class="field field-full">
-          <label class="field-label" for="field-name"
-            >应用名称 <span class="required">*</span></label
-          >
-          <input
-            id="field-name"
-            class="field-input"
-            type="text"
-            bind:value={editForm.name}
-            placeholder="我的应用程序"
-          />
+          <label class="field-label" for="field-name">应用名称 <span class="required">*</span></label>
+          <input id="field-name" class="field-input" type="text" bind:value={editForm.name} placeholder="我的应用程序" />
         </div>
 
-        <!-- Command -->
         <div class="field field-full">
-          <label class="field-label" for="field-command"
-            >启动命令 <span class="required">*</span></label
-          >
+          <label class="field-label" for="field-command">启动命令 <span class="required">*</span></label>
           <div class="input-with-button">
-            <input
-              id="field-command"
-              class="field-input field-mono"
-              type="text"
-              bind:value={editForm.command}
-              placeholder="C:\\Windows\\System32\\cmd.exe"
-            />
-            <button
-              type="button"
-              class="btn btn-ghost btn-compact"
-              onclick={handleBrowseCommand}
-              disabled={isSaving || isPickingCommand}
-            >
+            <input id="field-command" class="field-input field-mono" type="text" bind:value={editForm.command} placeholder="C:\\Windows\\System32\\cmd.exe" />
+            <button type="button" class="btn btn-ghost btn-compact" onclick={handleBrowseCommand} disabled={isSaving || isPickingCommand}>
               {isPickingCommand ? "正在打开..." : "浏览..."}
             </button>
           </div>
         </div>
 
-        <!-- Args -->
         <div class="field field-full">
           <label class="field-label" for="field-args">
             参数
-            <span class="field-hint"
-              >Shell 风格: <code>/c "echo hello" --debug</code></span
-            >
+            <span class="field-hint">Shell 风格: <code>/c "echo hello" --debug</code></span>
           </label>
-          <input
-            id="field-args"
-            class="field-input field-mono"
-            type="text"
-            bind:value={editForm.args}
-            placeholder='/c "我的应用" --verbose'
-          />
+          <input id="field-args" class="field-input field-mono" type="text" bind:value={editForm.args} placeholder='/c "我的应用" --verbose' />
         </div>
 
-        <!-- CWD -->
         <div class="field field-full">
           <label class="field-label" for="field-cwd">
             工作目录
-            <span class="field-hint"
-              >可选 - 默认为命令所在目录</span
-            >
+            <span class="field-hint">可选 - 默认为命令所在目录</span>
           </label>
-          <input
-            id="field-cwd"
-            class="field-input field-mono"
-            type="text"
-            bind:value={editForm.cwd}
-            placeholder="C:\path\to\cwd (可选)"
-          />
+          <input id="field-cwd" class="field-input field-mono" type="text" bind:value={editForm.cwd} placeholder="C:\path\to\cwd (可选)" />
         </div>
 
-        <!-- Checkboxes: Hide Window / Enabled -->
         <div class="checkbox-row">
           <label class="checkbox-label" for="field-hide-window">
-            <input
-              id="field-hide-window"
-              type="checkbox"
-              class="checkbox"
-              bind:checked={editForm.hideWindow}
-            />
+            <input id="field-hide-window" type="checkbox" class="checkbox" bind:checked={editForm.hideWindow} />
             <span>隐藏窗口</span>
           </label>
           <label class="checkbox-label" for="field-enabled">
-            <input
-              id="field-enabled"
-              type="checkbox"
-              class="checkbox"
-              bind:checked={editForm.enabled}
-            />
+            <input id="field-enabled" type="checkbox" class="checkbox" bind:checked={editForm.enabled} />
             <span>启用</span>
           </label>
         </div>
 
-        <!-- Stop Command -->
         <div class="field field-full">
           <label class="field-label" for="field-stop-command">
             停止命令
-            <span class="field-hint"
-              >可选的可执行文件。留空则自动检测停止。</span
-            >
+            <span class="field-hint">可选的可执行文件。留空则自动检测停止。</span>
           </label>
           <div class="input-with-button">
-            <input
-              id="field-stop-command"
-              class="field-input field-mono"
-              type="text"
-              bind:value={editForm.stopCommand}
-              placeholder="taskkill"
-            />
-            <button
-              type="button"
-              class="btn btn-ghost btn-compact"
-              onclick={handleBrowseStopCommand}
-              disabled={isSaving || isPickingStopCommand}
-            >
+            <input id="field-stop-command" class="field-input field-mono" type="text" bind:value={editForm.stopCommand} placeholder="taskkill" />
+            <button type="button" class="btn btn-ghost btn-compact" onclick={handleBrowseStopCommand} disabled={isSaving || isPickingStopCommand}>
               {isPickingStopCommand ? "正在打开..." : "浏览..."}
             </button>
           </div>
         </div>
 
-        <!-- Stop Args -->
         <div class="field field-full">
           <label class="field-label" for="field-stop-args">
             停止参数
-            <span class="field-hint"
-              >Shell 风格的参数。 <code>{"${PID}"}</code> 将被替换为被监控的 PID。</span
-            >
+            <span class="field-hint">Shell 风格的参数。 <code>{"${PID}"}</code> 将被替换为被监控的 PID。</span>
           </label>
-          <input
-            id="field-stop-args"
-            class="field-input field-mono"
-            type="text"
-            bind:value={editForm.stopArgs}
-            placeholder={"/PID ${PID} /T"}
-          />
+          <input id="field-stop-args" class="field-input field-mono" type="text" bind:value={editForm.stopArgs} placeholder={"/PID ${PID} /T"} />
         </div>
 
-        <!-- Numeric fields row: Stop Timeout / Restart Delay -->
         <div class="field-row">
           <div class="field">
             <label class="field-label" for="field-stop-timeout">
@@ -937,20 +815,7 @@
               <span class="field-hint">默认: 5</span>
             </label>
             <div class="number-input-wrap">
-              <input
-                id="field-stop-timeout"
-                class="field-input field-number"
-                type="number"
-                min="0"
-                max="3600"
-                bind:value={editForm.stopTimeoutSec}
-                onchange={() =>
-                  (editForm.stopTimeoutSec = clampInt(
-                    editForm.stopTimeoutSec,
-                    0,
-                    3600,
-                  ))}
-              />
+              <input id="field-stop-timeout" class="field-input field-number" type="number" min="0" max="3600" bind:value={editForm.stopTimeoutSec} onchange={() => (editForm.stopTimeoutSec = clampInt(editForm.stopTimeoutSec, 0, 3600))} />
             </div>
           </div>
           <div class="field">
@@ -959,25 +824,11 @@
               <span class="field-hint">默认: 0</span>
             </label>
             <div class="number-input-wrap">
-              <input
-                id="field-restart-delay"
-                class="field-input field-number"
-                type="number"
-                min="0"
-                max="3600"
-                bind:value={editForm.restartDelaySec}
-                onchange={() =>
-                  (editForm.restartDelaySec = clampInt(
-                    editForm.restartDelaySec,
-                    0,
-                    3600,
-                  ))}
-              />
+              <input id="field-restart-delay" class="field-input field-number" type="number" min="0" max="3600" bind:value={editForm.restartDelaySec} onchange={() => (editForm.restartDelaySec = clampInt(editForm.restartDelaySec, 0, 3600))} />
             </div>
           </div>
         </div>
 
-        <!-- Numeric fields row: Max Retries / Healthy Timeout -->
         <div class="field-row">
           <div class="field">
             <label class="field-label" for="field-max-retries">
@@ -985,20 +836,7 @@
               <span class="field-hint">0 = 不重试, &lt;0 = 无限重试</span>
             </label>
             <div class="number-input-wrap">
-              <input
-                id="field-max-retries"
-                class="field-input field-number"
-                type="number"
-                min="-1"
-                max="999"
-                bind:value={editForm.maxRetries}
-                onchange={() =>
-                  (editForm.maxRetries = clampInt(
-                    editForm.maxRetries,
-                    -1,
-                    999,
-                  ))}
-              />
+              <input id="field-max-retries" class="field-input field-number" type="number" min="-1" max="999" bind:value={editForm.maxRetries} onchange={() => (editForm.maxRetries = clampInt(editForm.maxRetries, -1, 999))} />
             </div>
           </div>
           <div class="field">
@@ -1007,48 +845,23 @@
               <span class="field-hint">0 = 不重置运行时间</span>
             </label>
             <div class="number-input-wrap">
-              <input
-                id="field-healthy-timeout"
-                class="field-input field-number"
-                type="number"
-                min="0"
-                max="3600"
-                bind:value={editForm.healthyTimeoutSec}
-                onchange={() =>
-                  (editForm.healthyTimeoutSec = clampInt(
-                    editForm.healthyTimeoutSec,
-                    0,
-                    3600,
-                  ))}
-              />
+              <input id="field-healthy-timeout" class="field-input field-number" type="number" min="0" max="3600" bind:value={editForm.healthyTimeoutSec} onchange={() => (editForm.healthyTimeoutSec = clampInt(editForm.healthyTimeoutSec, 0, 3600))} />
             </div>
           </div>
         </div>
 
-        <!-- Error message -->
         {#if errorMessage}
           <div class="error-banner" role="alert">{errorMessage}</div>
         {/if}
 
-        <!-- Action Buttons -->
         <div class="dialog-actions">
           {#if !isCreateMode}
-            <button
-              type="button"
-              class="btn btn-danger-ghost"
-              onclick={handleDeleteClick}
-              disabled={isSaving}
-            >
+            <button type="button" class="btn btn-danger-ghost" onclick={handleDeleteClick} disabled={isSaving}>
               删除
             </button>
           {/if}
           <div class="dialog-actions-right">
-            <button
-              type="button"
-              class="btn btn-ghost"
-              onclick={closeDialog}
-              disabled={isSaving}
-            >
+            <button type="button" class="btn btn-ghost" onclick={closeDialog} disabled={isSaving}>
               取消
             </button>
             <button type="submit" class="btn btn-primary" disabled={isSaving}>
@@ -1062,11 +875,15 @@
 {/if}
 
 <!-- =========================================================================
-     Styles (这部分是 CSS，不需要汉化，保持原样即可)
+     Styles
      ========================================================================= -->
 <style>
-  /* ── Grid ───────────────────────────────────────────────────────────────── */
+  /* 确保亮色和暗色表格都撑满容器 */
   :global(.ag-theme-alpine) {
+    height: 100% !important;
+    width: 100% !important;
+  }
+  :global(.ag-theme-alpine-dark) {
     height: 100% !important;
     width: 100% !important;
   }
@@ -1085,7 +902,6 @@
     text-align: right;
   }
 
-  /* ── Backdrop ───────────────────────────────────────────────────────────── */
   .dialog-backdrop {
     position: fixed;
     inset: 0;
@@ -1095,7 +911,6 @@
     animation: fadeIn 0.15s ease;
   }
 
-  /* ── Panel ──────────────────────────────────────────────────────────────── */
   .dialog-panel {
     position: fixed;
     top: 50%;
@@ -1118,25 +933,14 @@
   }
 
   @keyframes fadeIn {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
+    from { opacity: 0; }
+    to { opacity: 1; }
   }
   @keyframes slideUp {
-    from {
-      opacity: 0;
-      transform: translate(-50%, calc(-50% + 24px));
-    }
-    to {
-      opacity: 1;
-      transform: translate(-50%, -50%);
-    }
+    from { opacity: 0; transform: translate(-50%, calc(-50% + 24px)); }
+    to { opacity: 1; transform: translate(-50%, -50%); }
   }
 
-  /* ── Header ─────────────────────────────────────────────────────────────── */
   .dialog-header {
     padding: 24px 28px 0;
   }
@@ -1147,7 +951,6 @@
     margin: 0 0 4px;
     letter-spacing: -0.02em;
   }
-  /* ── Form ───────────────────────────────────────────────────────────────── */
   .dialog-form {
     padding: 20px 28px 24px;
     display: flex;
@@ -1161,9 +964,7 @@
     gap: 5px;
     flex: 1;
   }
-  .field-full {
-    width: 100%;
-  }
+  .field-full { width: 100%; }
   .field-row {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
@@ -1171,15 +972,10 @@
   }
 
   @media (max-width: 960px) {
-    .field-row {
-      grid-template-columns: repeat(2, 1fr);
-    }
+    .field-row { grid-template-columns: repeat(2, 1fr); }
   }
-
   @media (max-width: 640px) {
-    .field-row {
-      grid-template-columns: 1fr;
-    }
+    .field-row { grid-template-columns: 1fr; }
   }
 
   .field-label {
@@ -1192,9 +988,7 @@
     align-items: baseline;
     gap: 6px;
   }
-  .required {
-    color: #f87171;
-  }
+  .required { color: #f87171; }
   .field-hint {
     font-size: 0.7rem;
     font-weight: 400;
@@ -1217,9 +1011,7 @@
     color: #f1f5f9;
     font-size: 0.875rem;
     outline: none;
-    transition:
-      border-color 0.15s,
-      box-shadow 0.15s;
+    transition: border-color 0.15s, box-shadow 0.15s;
     width: 100%;
     box-sizing: border-box;
   }
@@ -1227,9 +1019,7 @@
     border-color: #6366f1;
     box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
   }
-  .field-input::placeholder {
-    color: #475569;
-  }
+  .field-input::placeholder { color: #475569; }
   .field-mono {
     font-family: "JetBrains Mono", "Cascadia Code", "Consolas", monospace;
     font-size: 0.82rem;
@@ -1240,14 +1030,9 @@
     gap: 8px;
     align-items: center;
   }
-  .input-with-button .field-input {
-    flex: 1;
-  }
+  .input-with-button .field-input { flex: 1; }
 
-  /* number input */
-  .number-input-wrap {
-    position: relative;
-  }
+  .number-input-wrap { position: relative; }
   .field-number {
     -moz-appearance: textfield;
     appearance: textfield;
@@ -1260,7 +1045,6 @@
     cursor: pointer;
   }
 
-  /* ── Checkboxes ─────────────────────────────────────────────────────────── */
   .checkbox-row {
     display: flex;
     gap: 24px;
@@ -1283,7 +1067,6 @@
     accent-color: #6366f1;
   }
 
-  /* ── Error banner ───────────────────────────────────────────────────────── */
   .error-banner {
     background: rgba(239, 68, 68, 0.15);
     border: 1px solid rgba(239, 68, 68, 0.4);
@@ -1293,7 +1076,6 @@
     padding: 8px 12px;
   }
 
-  /* ── Delete confirm ─────────────────────────────────────────────────────── */
   .confirm-delete-area {
     display: flex;
     flex-direction: column;
@@ -1302,25 +1084,20 @@
     padding: 32px 28px;
     text-align: center;
   }
-  .confirm-icon {
-    font-size: 2.5rem;
-  }
+  .confirm-icon { font-size: 2.5rem; }
   .confirm-text {
     color: #cbd5e1;
     font-size: 0.95rem;
     line-height: 1.6;
     margin: 0;
   }
-  .confirm-text strong {
-    color: #f87171;
-  }
+  .confirm-text strong { color: #f87171; }
   .confirm-buttons {
     display: flex;
     gap: 12px;
     margin-top: 8px;
   }
 
-  /* ── Buttons ────────────────────────────────────────────────────────────── */
   .dialog-actions {
     display: flex;
     justify-content: flex-end;
@@ -1328,9 +1105,7 @@
     padding-top: 8px;
     gap: 8px;
   }
-  .dialog-actions > .btn-danger-ghost {
-    margin-right: auto;
-  }
+  .dialog-actions > .btn-danger-ghost { margin-right: auto; }
   .dialog-actions-right {
     display: flex;
     gap: 8px;
@@ -1343,20 +1118,12 @@
     font-weight: 600;
     cursor: pointer;
     border: 1px solid transparent;
-    transition:
-      background 0.15s,
-      border-color 0.15s,
-      transform 0.1s,
-      opacity 0.15s;
+    transition: background 0.15s, border-color 0.15s, transform 0.1s, opacity 0.15s;
     outline: none;
     white-space: nowrap;
   }
-  .btn-compact {
-    padding: 8px 12px;
-  }
-  .btn:active {
-    transform: scale(0.97);
-  }
+  .btn-compact { padding: 8px 12px; }
+  .btn:active { transform: scale(0.97); }
   .btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
